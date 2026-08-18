@@ -1,0 +1,260 @@
+name: React-ACA-CICD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  IMAGE_NAME: react-webapp
+
+jobs:
+
+  build-scan-publish:
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ####################################################
+      # Node Setup
+      ####################################################
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      ####################################################
+      # Install Dependencies
+      ####################################################
+
+      - name: Install Dependencies
+        run: npm ci
+
+      ####################################################
+      # Lint
+      ####################################################
+
+      - name: Run ESLint
+        run: npm run lint --if-present
+
+      ####################################################
+      # Unit Tests
+      ####################################################
+
+      - name: Run Tests
+        run: npm test -- --watchAll=false
+
+      ####################################################
+      # SonarQube Scan
+      ####################################################
+
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          npx sonar-scanner \
+          -Dsonar.projectKey=react-app \
+          -Dsonar.sources=src \
+          -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+          -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+
+      ####################################################
+      # Quality Gate
+      ####################################################
+
+      - name: Sonar Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      ####################################################
+      # React Production Build
+      ####################################################
+
+      - name: Build React App
+        run: npm run build
+
+      ####################################################
+      # Generate Image Tag
+      ####################################################
+
+      - name: Generate Tag
+        id: tag
+        run: |
+          TAG=$(echo ${GITHUB_SHA} | cut -c1-8)
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+
+      ####################################################
+      # Azure Login Using SPN
+      ####################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      ####################################################
+      # ACR Login
+      ####################################################
+
+      - name: Login ACR
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+      ####################################################
+      # Kaniko Build
+      ####################################################
+
+      - name: Build Image with Kaniko
+        run: |
+
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -v /home/runner/.docker:/kaniko/.docker \
+            gcr.io/kaniko-project/executor:latest \
+            --context=/workspace \
+            --dockerfile=/workspace/Dockerfile \
+            --destination=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.image_tag }}
+
+      ####################################################
+      # Wiz Scan
+      ####################################################
+
+      - name: Wiz Scan
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        run: |
+          echo "Invoke Wiz CLI scan here"
+
+      ####################################################
+      # Verify ACR Image
+      ####################################################
+
+      - name: Verify Image in ACR
+        run: |
+          az acr repository show-tags \
+            --name ${{ secrets.ACR_NAME }} \
+            --repository ${{ env.IMAGE_NAME }}
+
+  deploy:
+
+    needs: build-scan-publish
+
+    runs-on: ubuntu-latest
+
+    environment: PROD
+
+    steps:
+
+      ####################################################
+      # Azure Login
+      ####################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      ####################################################
+      # Deploy ACA
+      ####################################################
+
+      - name: Deploy To ACA
+        run: |
+          az containerapp update \
+            --name ${{ secrets.ACA_APP_NAME }} \
+            --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ needs.build-scan-publish.outputs.image_tag }}
+
+      ####################################################
+      # Wait For Rollout
+      ####################################################
+
+      - name: Wait
+        run: sleep 60
+
+      ####################################################
+      # Application URL
+      ####################################################
+
+      - name: Get Application URL
+        id: appurl
+        run: |
+          APP_URL=$(az containerapp show \
+             --name ${{ secrets.ACA_APP_NAME }} \
+             --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+             --query properties.configuration.ingress.fqdn \
+             -o tsv)
+
+          echo "app_url=https://${APP_URL}" >> $GITHUB_OUTPUT
+
+      ####################################################
+      # Health Check
+      ####################################################
+
+      - name: Health Check
+        run: |
+          curl -f "${{ steps.appurl.outputs.app_url }}"
+
+      ####################################################
+      # Smoke Test
+      ####################################################
+
+      - name: Homepage Validation
+        run: |
+          curl -f "${{ steps.appurl.outputs.app_url }}"
+
+      ####################################################
+      # Validate Splunk
+      ####################################################
+
+      - name: Validate Splunk
+        run: |
+          curl -k \
+          "${{ secrets.SPLUNK_HEC_URL }}/services/collector/health"
+
+      ####################################################
+      # Validate Dynatrace
+      ####################################################
+
+      - name: Validate Dynatrace
+        run: |
+          curl \
+          -H "Authorization: Api-Token ${{ secrets.DYNATRACE_API_TOKEN }}" \
+          "${{ secrets.DYNATRACE_ENV_URL }}/api/v2/entities?pageSize=1"
+
+      ####################################################
+      # Deployment Summary
+      ####################################################
+
+      - name: Summary
+        run: |
+          echo "React deployment completed"
+          echo "Image Tag: ${{ needs.build-scan-publish.outputs.image_tag }}"
