@@ -1,0 +1,105 @@
+name: Seed Base Images To ACR
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  push-base-images:
+
+    runs-on:
+      - self-hosted
+
+    steps:
+
+      #################################################
+      # Checkout
+      #################################################
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      #################################################
+      # Azure Login
+      #################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      #################################################
+      # Docker Login To ACR
+      #################################################
+
+      - name: Login To ACR
+        run: |
+          docker login ${{ secrets.ACR_LOGIN_SERVER }} \
+            -u ${{ secrets.AZURE_CLIENT_ID }} \
+            -p ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      #################################################
+      # Pull Images
+      #################################################
+
+      - name: Pull Node Image
+        run: |
+          docker pull node:24.19-alpine
+
+      - name: Pull Nginx Image
+        run: |
+          docker pull nginx:1.30.4-alpine
+
+      #################################################
+      # Tag Images
+      #################################################
+
+      - name: Tag Node Image
+        run: |
+          docker tag node:24.19-alpine \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/node:24.19-alpine
+
+      - name: Tag Nginx Image
+        run: |
+          docker tag nginx:1.30.4-alpine \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/nginx:1.30.4-alpine
+
+      #################################################
+      # Push Node
+      #################################################
+
+      - name: Push Node Image
+        run: |
+          docker push \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/node:24.19-alpine
+
+      #################################################
+      # Push Nginx
+      #################################################
+
+      - name: Push Nginx Image
+        run: |
+          docker push \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/nginx:1.30.4-alpine
+
+      #################################################
+      # Verify
+      #################################################
+
+      - name: Verify Node Repository
+        run: |
+          az acr repository show-tags \
+            --name ${{ secrets.ACR_NAME }} \
+            --repository base/node
+
+      - name: Verify Nginx Repository
+        run: |
+          az acr repository show-tags \
+            --name ${{ secrets.ACR_NAME }} \
+            --repository base/nginx
