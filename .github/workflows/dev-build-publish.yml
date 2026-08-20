@@ -1,0 +1,140 @@
+name: Build-Publish-Dev
+
+on:
+
+  push:
+    branches:
+      - develop
+
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20"
+  IMAGE_NAME: react-webapp
+
+jobs:
+
+  build_scan_push:
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ##################################################
+      # Node Setup
+      ##################################################
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      ##################################################
+      # Install Dependencies
+      ##################################################
+
+      - name: Install Dependencies
+        run: npm ci
+
+      ##################################################
+      # React Build
+      ##################################################
+
+      - name: Build Application
+        run: npm run build
+
+      ##################################################
+      # Generate Image Tag
+      ##################################################
+
+      - name: Generate Tag
+        id: tag
+        run: |
+          TAG=$(echo ${GITHUB_SHA} | cut -c1-8)
+          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+
+      ##################################################
+      # Azure Login
+      ##################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      ##################################################
+      # Create Docker Config For Kaniko
+      ##################################################
+
+      - name: Docker Auth
+        run: |
+          mkdir -p ~/.docker
+
+          AUTH=$(echo -n "${{ secrets.AZURE_CLIENT_ID }}:${{ secrets.AZURE_CLIENT_SECRET }}" | base64 -w 0)
+
+          cat > ~/.docker/config.json << EOF
+          {
+            "auths": {
+              "${{ secrets.ACR_LOGIN_SERVER }}": {
+                "auth": "$AUTH"
+              }
+            }
+          }
+          EOF
+
+      ##################################################
+      # Kaniko Build & Push
+      ##################################################
+
+      - name: Build and Push using Kaniko
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -v ~/.docker:/kaniko/.docker \
+            gcr.io/kaniko-project/executor:latest \
+            --context=/workspace \
+            --dockerfile=/workspace/Dockerfile \
+            --destination=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
+
+      ##################################################
+      # Wiz Scan
+      ##################################################
+
+      - name: Wiz Scan
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        run: |
+          echo "Integrate organization Wiz CLI command here"
+
+      ##################################################
+      # Verify Image
+      ##################################################
+
+      - name: Verify Image
+        run: |
+          az acr repository show-tags \
+            --name ${{ secrets.ACR_NAME }} \
+            --repository ${{ env.IMAGE_NAME }}
+
+      ##################################################
+      # Print Image Details
+      ##################################################
+
+      - name: Deployment Artifact
+        run: |
+          echo "Image Created:"
+          echo "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
