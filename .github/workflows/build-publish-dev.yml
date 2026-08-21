@@ -21,80 +21,68 @@ jobs:
 
     runs-on: xyz-abc-ddd
 
+    container:
+      image: GHCR_MAVEN_KANIKO_IMAGE_PLACEHOLDER
+
     steps:
 
       ####################################################
-      # Checkout
+      # Checkout Source
       ####################################################
 
       - name: Checkout
         uses: actions/checkout@v4
 
       ####################################################
-      # Azure Login
-      ####################################################
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: |
-            {
-              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
-              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
-              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
-            }
-
-      ####################################################
-      # Generate Tag
+      # Generate Image Tag
       ####################################################
 
       - name: Generate Image Tag
         run: |
           IMAGE_TAG=$(echo ${GITHUB_SHA} | cut -c1-8)
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
       ####################################################
-      # Create Docker Authentication Config
+      # Verify Kaniko
       ####################################################
 
-      - name: Create Docker Config
-        shell: bash
+      - name: Verify Kaniko
+        run: |
+          ls -l /kaniko
+          /kaniko/executor version
+
+      ####################################################
+      # Create ACR Authentication
+      ####################################################
+
+      - name: Create ACR Auth Config
         run: |
 
-          mkdir -p ~/.docker
+          mkdir -p /kaniko/.docker
 
-          GHCR_AUTH=$(echo -n "${{ github.actor }}:${{ github.token }}" | base64 -w 0)
+          AUTH=$(echo -n "${{ secrets.AZURE_CLIENT_ID }}:${{ secrets.AZURE_CLIENT_SECRET }}" | base64 -w 0)
 
-          ACR_AUTH=$(echo -n "${{ secrets.AZURE_CLIENT_ID }}:${{ secrets.AZURE_CLIENT_SECRET }}" | base64 -w 0)
-
-          cat > ~/.docker/config.json <<EOF
+          cat > /kaniko/.docker/config.json <<EOF
           {
             "auths": {
-              "ghcr.io": {
-                "auth": "${GHCR_AUTH}"
-              },
               "${{ secrets.ACR_LOGIN_SERVER }}": {
-                "auth": "${ACR_AUTH}"
+                "auth": "${AUTH}"
               }
             }
           }
           EOF
 
       ####################################################
-      # Build and Push Image using Kaniko
+      # Build and Push using Kaniko
       ####################################################
 
       - name: Build And Push
         run: |
-
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -v ~/.docker:/kaniko/.docker \
-            GHCR_KANIKO_IMAGE_PLACEHOLDER \
-            --context=/workspace \
-            --dockerfile=/workspace/Dockerfile \
-            --destination=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
+          /kaniko/executor \
+            --context="${GITHUB_WORKSPACE}" \
+            --dockerfile="${GITHUB_WORKSPACE}/Dockerfile" \
+            --destination="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}" \
+            --oci-layout-path=/kaniko/oci-layout
 
       ####################################################
       # Summary
@@ -102,5 +90,5 @@ jobs:
 
       - name: Build Summary
         run: |
-          echo "Image Successfully Generated"
+          echo "Image successfully pushed:"
           echo "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
