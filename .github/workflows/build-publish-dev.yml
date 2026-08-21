@@ -92,3 +92,11 @@ jobs:
         run: |
           echo "Image successfully pushed:"
           echo "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+          - name: Verify Image In ACR
+ 
+      - name: Image tag details in the ACR
+        run: |
+          az acr repository show-tags \
+          --name ${{ secrets.ACR_NAME }} \
+          --repository react-webapp \
+          -o table
