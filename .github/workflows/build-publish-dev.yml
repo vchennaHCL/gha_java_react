@@ -1,0 +1,96 @@
+name: Build-Publish-Dev
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - develop
+
+env:
+  IMAGE_NAME: react-webapp
+
+jobs:
+
+  build-kaniko-publish:
+
+    runs-on: xyz-abc-ddd
+
+    steps:
+
+      ################################################
+      # Checkout
+      ################################################
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ################################################
+      # Azure Login
+      ################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      ################################################
+      # Generate Tag
+      ################################################
+
+      - name: Generate Tag
+        id: tag
+        run: |
+          TAG=$(echo ${GITHUB_SHA} | cut -c1-8)
+          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
+
+      ################################################
+      # Create Kaniko Docker Config
+      ################################################
+
+      - name: Docker Auth For Kaniko
+        run: |
+
+          mkdir -p ~/.docker
+
+          AUTH=$(echo -n "${{ secrets.AZURE_CLIENT_ID }}:${{ secrets.AZURE_CLIENT_SECRET }}" | base64 -w 0)
+
+          cat > ~/.docker/config.json << EOF
+          {
+            "auths": {
+              "${{ secrets.ACR_LOGIN_SERVER }}": {
+                "auth": "$AUTH"
+              }
+            }
+          }
+          EOF
+
+      ################################################
+      # Kaniko Build & Push
+      ################################################
+
+      - name: Build And Push
+        run: |
+
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -v ~/.docker:/kaniko/.docker \
+            gcr.io/kaniko-project/executor:latest \
+            --context=/workspace \
+            --dockerfile=/workspace/Dockerfile \
+            --destination=${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
+
+      ################################################
+      # Output Image
+      ################################################
+
+      - name: Image Details
+        run: |
+          echo "Generated Image:"
+          echo "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
