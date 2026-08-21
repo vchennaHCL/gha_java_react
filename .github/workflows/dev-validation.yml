@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - feature/*
+      - develop
+
+  pull_request:
+    branches:
+      - develop
+      - main
+
+  workflow_dispatch:
 
 env:
   NODE_VERSION: "24"
