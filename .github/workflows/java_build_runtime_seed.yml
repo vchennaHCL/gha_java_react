@@ -1,0 +1,115 @@
+name: Seed Java Base Images To ACR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  seed-java-images:
+
+    runs-on: xyz-abc-ddd
+
+    steps:
+
+      ####################################################
+      # Checkout
+      ####################################################
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ####################################################
+      # Azure Login
+      ####################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}"
+            }
+
+      ####################################################
+      # Login To ACR
+      ####################################################
+
+      - name: Login To ACR
+        run: |
+          echo "${{ secrets.AZURE_CLIENT_SECRET }}" | \
+          docker login ${{ secrets.ACR_LOGIN_SERVER }} \
+          --username "${{ secrets.AZURE_CLIENT_ID }}" \
+          --password-stdin
+
+      ####################################################
+      # Pull Build Image
+      ####################################################
+
+      - name: Pull Java Build Image
+        run: |
+          docker pull eclipse-temurin:21-jdk-alpine-3.23
+
+      ####################################################
+      # Pull Runtime Image
+      ####################################################
+
+      - name: Pull Java Runtime Image
+        run: |
+          docker pull eclipse-temurin:21-jre-alpine-3.23
+
+      ####################################################
+      # Tag Build Image
+      ####################################################
+
+      - name: Tag Java Build Image
+        run: |
+          docker tag \
+          eclipse-temurin:21-jdk-alpine-3.23 \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/java-build:21-jdk-alpine-3.23
+
+      ####################################################
+      # Tag Runtime Image
+      ####################################################
+
+      - name: Tag Java Runtime Image
+        run: |
+          docker tag \
+          eclipse-temurin:21-jre-alpine-3.23 \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/java-runtime:21-jre-alpine-3.23
+
+      ####################################################
+      # Push Build Image
+      ####################################################
+
+      - name: Push Java Build Image
+        run: |
+          docker push \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/java-build:21-jdk-alpine-3.23
+
+      ####################################################
+      # Push Runtime Image
+      ####################################################
+
+      - name: Push Java Runtime Image
+        run: |
+          docker push \
+          ${{ secrets.ACR_LOGIN_SERVER }}/base/java-runtime:21-jre-alpine-3.23
+
+      ####################################################
+      # Summary
+      ####################################################
+
+      - name: Summary
+        run: |
+          echo "Java base images seeded successfully"
+
+          echo "${{ secrets.ACR_LOGIN_SERVER }}/base/java-build:21-jdk-alpine-3.23"
+
+          echo "${{ secrets.ACR_LOGIN_SERVER }}/base/java-runtime:21-jre-alpine-3.23"
