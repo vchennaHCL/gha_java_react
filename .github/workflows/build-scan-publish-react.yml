@@ -1,0 +1,127 @@
+name: Build-Scan-Publish-React
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - develop
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+  actions: write
+  packages: write
+
+env:
+  IMAGE_NAME: react-webapp
+
+jobs:
+
+  build-scan-publish:
+
+    runs-on: xyz-abc-ddd
+
+    timeout-minutes: 60
+
+    container:
+      image: ghcr.io/<org>/maven-kaniko:<tag>
+
+    steps:
+
+      ####################################################
+      # Checkout
+      ####################################################
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ####################################################
+      # Generate Image Tag
+      ####################################################
+
+      - name: Generate Image Tag
+        run: |
+          IMAGE_TAG=$(echo ${GITHUB_SHA} | cut -c1-8)
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      ####################################################
+      # Create ACR Auth Config
+      ####################################################
+
+      - name: Create ACR Auth Config
+        run: |
+
+          mkdir -p /kaniko/.docker
+
+          AUTH=$(echo -n "${{ secrets.AZURE_CLIENT_ID }}:${{ secrets.AZURE_CLIENT_SECRET }}" | base64 -w 0)
+
+          cat > /kaniko/.docker/config.json <<EOF
+          {
+            "auths": {
+              "${{ secrets.ACR_LOGIN_SERVER }}": {
+                "auth": "${AUTH}"
+              }
+            }
+          }
+          EOF
+
+      ####################################################
+      # Build OCI Layout Only (No Push)
+      ####################################################
+
+      - name: Kaniko Build
+        run: |
+          /kaniko/executor \
+            --context="${GITHUB_WORKSPACE}" \
+            --dockerfile="${GITHUB_WORKSPACE}/Dockerfile" \
+            --no-push \
+            --oci-layout-path=/kaniko/oci-layout
+
+      ####################################################
+      # Wiz Scan
+      ####################################################
+
+      - name: Run Wiz Scan
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+          WIZ_CNTR_POLICY: "default vuln policy"
+        run: |
+
+          chmod +x .github/scripts/run_wiz-scan.sh
+
+          bash .github/scripts/run_wiz-scan.sh \
+            "wiz-scan-frontend:1.0" \
+            "$GITHUB_WORKSPACE/Dockerfile" \
+            "$GITHUB_WORKSPACE"
+
+      ####################################################
+      # Upload SARIF
+      ####################################################
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+      ####################################################
+      # Push To ACR
+      ####################################################
+
+      - name: Publish Image To ACR
+        run: |
+          /kaniko/executor \
+            --context="${GITHUB_WORKSPACE}" \
+            --dockerfile="${GITHUB_WORKSPACE}/Dockerfile" \
+            --destination="${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+
+      ####################################################
+      # Summary
+      ####################################################
+
+      - name: Summary
+        run: |
+          echo "Image pushed successfully:"
+          echo "${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
