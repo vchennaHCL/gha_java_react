@@ -1,0 +1,92 @@
+name: Java Validation
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - feature/java
+      - feature/*
+
+permissions:
+  contents: read
+
+jobs:
+
+  validate:
+
+    runs-on: xyz-abc-ddd
+
+    steps:
+
+      ####################################################
+      # Checkout
+      ####################################################
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      ####################################################
+      # Verify Project Structure
+      ####################################################
+
+      - name: Verify Java Project Structure
+        run: |
+          ls -la
+          ls -la JavaModulith
+
+      ####################################################
+      # Setup Java 21
+      ####################################################
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      ####################################################
+      # Verify Java
+      ####################################################
+
+      - name: Verify Java Version
+        run: |
+          java -version
+
+      ####################################################
+      # Verify Gradle Wrapper
+      ####################################################
+
+      - name: Verify Gradle Wrapper
+        working-directory: JavaModulith
+        run: |
+          chmod +x gradlew
+          ./gradlew --version
+
+      ####################################################
+      # Validate Build
+      ####################################################
+
+      - name: Build Spring Boot Application
+        working-directory: JavaModulith
+        run: |
+          ./gradlew clean bootJar --no-daemon --stacktrace
+
+      ####################################################
+      # Verify JAR
+      ####################################################
+
+      - name: Verify Generated Artifact
+        working-directory: JavaModulith
+        run: |
+          ls -la build/libs
+
+      ####################################################
+      # Upload Artifact (Optional)
+      ####################################################
+
+      - name: Upload Boot Jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootjar
+          path: JavaModulith/build/libs/*.jar
