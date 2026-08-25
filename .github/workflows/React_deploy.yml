@@ -1,0 +1,83 @@
+deploy:
+
+  name: Deploy To ACA Dev
+
+  needs:
+    - build
+    - wiz-scan
+
+  runs-on: deployment-runner
+
+  permissions:
+    id-token: write
+    contents: read
+
+  steps:
+
+    ####################################################
+    # Azure Login
+    ####################################################
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: |
+          {
+            "clientId":"${{ secrets.DEPLOY_SP_CLIENT_ID }}",
+            "clientSecret":"${{ secrets.DEPLOY_SP_CLIENT_SECRET }}",
+            "subscriptionId":"${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}",
+            "tenantId":"${{ secrets.DEPLOY_SP_TENANT_ID }}"
+          }
+
+    ####################################################
+    # Verify Subscription
+    ####################################################
+
+    - name: Verify Subscription
+      run: |
+        az account show --output table
+
+    ####################################################
+    # Debug ACA Access
+    ####################################################
+
+    - name: Debug ACA Access
+      run: |
+        az resource list \
+          --namespace Microsoft.App \
+          --output table
+
+    ####################################################
+    # Deploy Image To ACA
+    ####################################################
+
+    - name: Deploy Image To ACA
+      run: |
+        az containerapp update \
+          --name "${{ secrets.ACA_NAME }}" \
+          --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+          --image "${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ needs.build.outputs.image_tag }}"
+
+    ####################################################
+    # Verify Deployment
+    ####################################################
+
+    - name: Verify Deployment
+      run: |
+        az containerapp show \
+          --name "${{ secrets.ACA_NAME }}" \
+          --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+          --query properties.latestRevisionName \
+          -o tsv
+
+    ####################################################
+    # Get ACA URL
+    ####################################################
+
+    - name: Get Application URL
+      run: |
+        az containerapp show \
+          --name "${{ secrets.ACA_NAME }}" \
+          --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+          --query properties.configuration.ingress.fqdn \
+          -o tsv
