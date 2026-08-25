@@ -1,0 +1,19 @@
+
+
+- name: Verify ACA Exists
+  run: |
+    az containerapp show \
+      --name "container-app-test" \
+      --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+      --output table
+
+az containerapp update \
+  --name container-app-test \
+  --resource-group <RG_NAME> \
+  --image <acr>/react-webapp:<tag>
+
+az containerapp show \
+  --name container-app-test \
+  --resource-group <RG_NAME> \
+  --query properties.configuration.ingress.fqdn \
+  -o tsv
