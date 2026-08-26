@@ -1,0 +1,9 @@
+az containerapp create \
+  --name react-webapp-dev \
+  --resource-group <RG_NAME> \
+  --environment azr-eus-dev-einv-aca01 \
+  --image myacr.azurecr.io/react-webapp:2f2ed0000f \
+  --target-port 80 \
+  --ingress external \
+  --min-replicas 1 \
+  --max-replicas 2
