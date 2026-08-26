@@ -1,0 +1,5 @@
+The ACA Managed Environment azr-eus-dev-einv-aca01 has a System Assigned Managed Identity.
+
+Could you please verify whether this Managed Identity has the AcrPull role on ACR xxyeusdev?
+
+The Container App gets created successfully, but provisioning fails before the first revision is created.
