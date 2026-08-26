@@ -1,0 +1,103 @@
+name: Create React Container App
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE_TAG: 2f2ed0000f # image id that is deployed to ACR
+
+jobs:
+
+  create-react-aca:
+
+    runs-on: deployment-runner
+
+    steps:
+
+      ####################################################
+      # Azure Login
+      ####################################################
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.DEPLOY_SP_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.DEPLOY_SP_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.DEPLOY_SP_TENANT_ID }}"
+            }
+
+      ####################################################
+      # Verify Subscription
+      ####################################################
+
+      - name: Verify Subscription
+        run: |
+          az account show --output table
+
+      ####################################################
+      # Verify ACA Environment
+      ####################################################
+
+      - name: Verify ACA Environment
+        run: |
+          az containerapp env show \
+            --name "${{ secrets.ACA_ENVIRONMENT }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --output table
+
+      ####################################################
+      # Create React Container App
+      ####################################################
+
+      - name: Create React Container App
+        run: |
+          az containerapp create \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --environment "${{ secrets.ACA_ENVIRONMENT }}" \
+            --image "${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ env.IMAGE_TAG }}" \
+            --target-port 80 \
+            --ingress external \
+            --min-replicas 1 \
+            --max-replicas 2
+
+      ####################################################
+      # Verify ACA
+      ####################################################
+
+      - name: Verify ACA
+        run: |
+          az containerapp show \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --output table
+
+      ####################################################
+      # Check Revision Status
+      ####################################################
+
+      - name: Check Revision Status
+        run: |
+          az containerapp revision list \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --output table
+
+      ####################################################
+      # Get Application URL
+      ####################################################
+
+      - name: Get Application URL
+        run: |
+          az containerapp show \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            -o tsv
