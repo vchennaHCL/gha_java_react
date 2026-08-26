@@ -3,3 +3,115 @@ The ACA Managed Environment azr-eus-dev-einv-aca01 has a System Assigned Managed
 Could you please verify whether this Managed Identity has the AcrPull role on ACR xxyeusdev?
 
 The Container App gets created successfully, but provisioning fails before the first revision is created.
+
+---------------------
+
+Hi Team,
+
+We have successfully validated the following:
+
+Deployment SP login is successful.
+Container Apps Contributor permission is working.
+ACA Managed Environment azr-eus-dev-einv-aca01 exists.
+Container App react-webapp-dev is being created.
+Correct image is configured:
+Plain Text
+1
+xxyeusdev.azurecr.io/react-webapp:2f2ed0000f
+Show more lines
+
+However, the Container App remains in:
+
+Plain Text
+1
+ProvisioningState = Failed
+Show more lines
+
+The ACA Managed Environment azr-eus-dev-einv-aca01 has a System Assigned Managed Identity.
+
+Could you please verify whether this Managed Identity has the AcrPull role on ACR xxyeusdev?
+
+The Container App gets created successfully, but provisioning fails before the first revision is created.
+
+Additionally, when viewing Revisions and Replicas in the Azure Portal for react-webapp-dev, I receive:
+
+Plain Text
+1
+You do not have write permissions on this container app to make changes.
+Show more lines
+
+Could you please confirm whether my user account requires additional permissions on the Container App for troubleshooting and validation activities?
+
+This wording is professional and keeps the focus on the two likely areas:
+
+ACA Environment Managed Identity → AcrPull on ACR
+Your personal portal permissions on the Container App
+
+At this point, I think the AcrPull verification is the more important blocker, while your portal write access is useful to have for troubleshooting.
+
+Provide your feedback on BizChat
+You said:
+Make the message shorter and more direct
+Copilot said:
+
+Hi Team,
+
+The Container App react-webapp-dev is getting created, but remains in:
+
+Plain Text
+1
+ProvisioningState = Failed
+Show more lines
+
+The ACA Managed Environment azr-eus-dev-einv-aca01 has a System Assigned Managed Identity.
+
+Could you please verify whether this Managed Identity has the AcrPull role on ACR xxyeusdev?
+
+Also, in the Azure Portal, I see:
+
+Plain Text
+1
+You do not have write permissions on this container app to make changes.
+Show more lines
+
+Could you please confirm whether additional permissions are required for my user account on react-webapp-dev?
+
+Thanks.
+
+Provide your feedback on BizChat
+You said:
+Draft a follow-up if the admin confirms AcrPull is already assigned
+Copilot said:
+
+You can keep it short and focused:
+
+Hi Team,
+
+Thanks for confirming that AcrPull is already assigned to the ACA Environment Managed Identity.
+
+The current status is:
+
+Container App react-webapp-dev gets created successfully.
+Correct image is configured:
+Plain Text
+1
+xxyeusdev.azurecr.io/react-webapp:2f2ed0000f
+Show more lines
+ACA Environment identity is present.
+ProvisioningState remains Failed.
+No revision gets created.
+
+Could you please help check the provisioning/revision failure from the ACA backend logs and confirm if there are any additional prerequisites (registry configuration, networking, private endpoints, firewall restrictions, etc.) required for ACA to pull and start the image?
+
+Also, I currently see:
+
+Plain Text
+1
+You do not have write permissions on this container app to make changes.
+Show more lines
+
+Please let me know if additional access is needed for troubleshooting.
+
+Thanks.
+
+This keeps the focus on the fact that AcrPull has been ruled out, and the next investigation should be around ACA revision provisioning, networking, or ACR connectivity.
