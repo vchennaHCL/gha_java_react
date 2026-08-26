@@ -1,0 +1,27 @@
+"Please provide Container Apps Contributor on RG". Can I ask this?
+  
+  Yes, absolutely. In fact, based on the error, that's the correct ask.
+
+You can send something like:
+
+Hi Team,
+
+The Deployment Service Principal authentication is working successfully. I am able to:
+
+Login to Azure using the Deployment SP
+Access the subscription
+View the target Resource Group
+View the ACA Managed Environment
+
+However, Container App creation is failing with the below authorization error:
+
+Plain Text
+1
+Microsoft.App/containerApps/write
+Show more lines
+
+Could you please grant Container Apps Contributor role to the Deployment Service Principal on the target Resource Group?
+
+This is required to create and update Azure Container Apps as part of the deployment automation.
+
+Thanks.
