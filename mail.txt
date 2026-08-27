@@ -1,0 +1,22 @@
+Hi Team,
+
+I completed additional validation on the ACA environment and found the following:
+
+ACA Environment azr-eus-dev-einv-aca01 is in Succeeded state.
+Managed Identity is enabled and AcrPull has been assigned.
+Container App creation succeeds.
+However, the Container App remains in ProvisioningState = Failed.
+No revision is created, so logs are unavailable.
+I also tested with a public image (nginx:latest), and it fails with the same Failed to provision revision error.
+
+Since the issue is reproducible with a public image, it does not appear to be related to:
+
+ACR access
+AcrPull permissions
+Application image configuration
+
+I also noticed the ACA Environment is VNet-integrated and has an infrastructureSubnetId configured.
+
+Could you please review the ACA Environment (azr-eus-dev-einv-aca01) health, subnet/network configuration (NSG/UDR/firewall), and the backend revision provisioning events to identify why revisions are failing to start?
+
+Thanks.
