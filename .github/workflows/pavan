@@ -1,0 +1,57 @@
+
+- name: Azure Login
+  uses: azure/login@v2
+  with:
+    creds: |
+      {
+        "clientId":"${{ secrets.DEPLOY_SP_CLIENT_ID }}",
+        "clientSecret":"${{ secrets.DEPLOY_SP_CLIENT_SECRET }}",
+        "subscriptionId":"${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}",
+        "tenantId":"${{ secrets.DEPLOY_SP_TENANT_ID }}"
+      }
+
+- name: Set Subscription
+  run: |
+    az account set \
+      --subscription "${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}"
+
+    az account show --output table
+
+    az account show --query "{Name:name,SubscriptionId:id}" -o table
+
+----------
+
+- name: Create or Update ACA
+  run: |
+
+    ACA_NAME="${{ secrets.ACA_NAME }}"
+    RG_NAME="${{ secrets.ACA_RESOURCE_GROUP }}"
+    ACA_ENV="${{ secrets.ACA_ENVIRONMENT }}"
+    IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ needs.build.outputs.image_tag }}"
+
+    if az containerapp show \
+      --name "$ACA_NAME" \
+      --resource-group "$RG_NAME" >/dev/null 2>&1; then
+
+      echo "Updating existing Container App..."
+
+      az containerapp update \
+        --name "$ACA_NAME" \
+        --resource-group "$RG_NAME" \
+        --image "$IMAGE"
+
+    else
+
+      echo "Creating new Container App..."
+
+      az containerapp create \
+        --name "$ACA_NAME" \
+        --resource-group "$RG_NAME" \
+        --environment "$ACA_ENV" \
+        --image "$IMAGE" \
+        --target-port 80 \
+        --ingress external \
+        --min-replicas 1 \
+        --max-replicas 2
+
+    fi
