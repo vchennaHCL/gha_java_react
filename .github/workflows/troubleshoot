@@ -8,3 +8,12 @@ az containerapp registry set --name my-container-app --resource-group my-rg --se
 -----------------
 
 failed to provision revision for container app with provisioningstate=failed; what if I am seeing acrpull role on containerapp env with 2 records, one on this resource scope and other on resourcegroup scope
+
+----------------
+
+az containerapp update \
+  --name <YOUR_CONTAINER_APP_NAME> \
+  --resource-group <YOUR_RESOURCE_GROUP_NAME> \
+  --image <YOUR_REGISTRY>.azurecr.io/<REPO_NAME>:<TAG> \
+  --registry-server <YOUR_REGISTRY>.azurecr.io \
+  --registry-identity system
