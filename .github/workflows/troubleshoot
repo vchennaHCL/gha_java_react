@@ -3,3 +3,8 @@ az containerapp identity assign --name my-container-app --resource-group my-rg
 az role assignment create --assignee <CONTAINER-APP-PRINCIPAL-ID> --role AcrPull --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ContainerRegistry/registries/<acr-name>
 
 az containerapp registry set --name my-container-app --resource-group my-rg --server <acr-name>.azurecr.io --identity system
+
+
+-----------------
+
+failed to provision revision for container app with provisioningstate=failed; what if I am seeing acrpull role on containerapp env with 2 records, one on this resource scope and other on resourcegroup scope
