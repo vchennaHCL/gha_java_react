@@ -17,3 +17,9 @@ az containerapp update \
   --image <YOUR_REGISTRY>.azurecr.io/<REPO_NAME>:<TAG> \
   --registry-server <YOUR_REGISTRY>.azurecr.io \
   --registry-identity system
+-------------
+az containerapp update `
+  --name "YOUR_CONTAINER_APP_NAME" `
+  --resource-group "YOUR_RESOURCE_GROUP_NAME" `
+  --image "://microsoft.com" `
+  --set "properties.configuration.registries=[]"
