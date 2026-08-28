@@ -1,0 +1,9 @@
+Single-line Command
+az containerapp create --name react-webapp-dev --resource-group <RG_NAME> --environment azr-eus-dev-einv-aca01 --image xxyeusdev.azurecr.io/react-webapp:2f2ed0000f --registry-server xxyeusdev.azurecr.io --registry-username <ACR_USERNAME> --registry-password <ACR_PASSWORD> --target-port 80 --ingress external
+
+If the Container App Already Exists
+You can configure the registry separately:
+az containerapp registry set --name react-webapp-dev --resource-group <RG_NAME> --server xxyeusdev.azurecr.io --username <ACR_USERNAME> --password <ACR_PASSWORD>
+
+Then update the image:
+az containerapp update --name react-webapp-dev --resource-group <RG_NAME> --image xxyeusdev.azurecr.io/react-webapp:2f2ed0000f
