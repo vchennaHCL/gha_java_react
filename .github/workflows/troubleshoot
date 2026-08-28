@@ -23,3 +23,14 @@ az containerapp update `
   --resource-group "YOUR_RESOURCE_GROUP_NAME" `
   --image "://microsoft.com" `
   --set "properties.configuration.registries=[]"
+
+--------------
+az containerapp env show `
+  --name "YOUR_CONTAINER_APP_ENV_NAME" `
+  --resource-group "YOUR_RESOURCE_GROUP_NAME" `
+  --query "{vnetId:properties.vnetConfiguration.infrastructureSubnetId, internal:properties.vnetConfiguration.internal}" `
+  --output json
+
+
+
+
