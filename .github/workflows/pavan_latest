@@ -1,0 +1,114 @@
+name: Deploy React to ACA
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ACR image tag to deploy"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  deploy:
+
+    runs-on: deployment-runner
+
+    steps:
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: |
+            {
+              "clientId":"${{ secrets.DEPLOY_SP_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.DEPLOY_SP_CLIENT_SECRET }}",
+              "subscriptionId":"${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}",
+              "tenantId":"${{ secrets.DEPLOY_SP_TENANT_ID }}"
+            }
+
+      - name: Set Subscription
+        run: |
+          az account set \
+            --subscription "${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}"
+
+          az account show --output table
+
+      - name: Create or Update Container App
+        run: |
+
+          ACA_NAME="${{ secrets.ACA_NAME }}"
+          RG_NAME="${{ secrets.ACA_RESOURCE_GROUP }}"
+          ACA_ENV="${{ secrets.ACA_ENVIRONMENT }}"
+
+          IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ github.event.inputs.image_tag }}"
+
+          echo "Deploying image:"
+          echo "$IMAGE"
+
+          if az containerapp show \
+            --name "$ACA_NAME" \
+            --resource-group "$RG_NAME" >/dev/null 2>&1; then
+
+            echo "Container App exists. Updating image..."
+
+            az containerapp registry set \
+              --name "$ACA_NAME" \
+              --resource-group "$RG_NAME" \
+              --server "${{ secrets.ACR_LOGIN_SERVER }}" \
+              --username "${{ secrets.ACR_USERNAME }}" \
+              --password "${{ secrets.ACR_PASSWORD }}"
+
+            az containerapp update \
+              --name "$ACA_NAME" \
+              --resource-group "$RG_NAME" \
+              --image "$IMAGE"
+
+          else
+
+            echo "Container App does not exist. Creating..."
+
+            az containerapp create \
+              --name "$ACA_NAME" \
+              --resource-group "$RG_NAME" \
+              --environment "$ACA_ENV" \
+              --image "$IMAGE" \
+              --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+              --registry-username "${{ secrets.ACR_USERNAME }}" \
+              --registry-password "${{ secrets.ACR_PASSWORD }}" \
+              --target-port 80 \
+              --ingress external \
+              --min-replicas 1 \
+              --max-replicas 2
+
+          fi
+
+      - name: Verify Deployment
+        run: |
+
+          az containerapp show \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --query properties.provisioningState \
+            -o tsv
+
+      - name: Show Revision Information
+        run: |
+
+          az containerapp revision list \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --output table
+
+      - name: Get Application URL
+        run: |
+
+          az containerapp show \
+            --name "${{ secrets.ACA_NAME }}" \
+            --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            -o tsv
