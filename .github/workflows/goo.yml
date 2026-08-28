@@ -1,0 +1,128 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main  # Triggers the pipeline when pushing to main branch
+
+permissions:
+  id-token: write # Required if using Azure OIDC authentication
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: "YOUR_APP_RESOURCE_GROUP"
+  CONTAINER_APP_NAME: "YOUR_CONTAINER_APP_NAME"
+  CONTAINER_APP_ENV: "YOUR_INTERNAL_ENV_NAME"
+  ACR_NAME: "YOUR_REGISTRY_NAME" # Just the name, not .azurecr.io
+  ACR_SERVER: "YOUR_REGISTRY_NAME.azurecr.io"
+  IMAGE_NAME: "YOUR_REPO_NAME"
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted # Forces execution inside your private VNet boundary
+    
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }} # Store your Service Principal JSON here
+
+    - name: Build and Push Image to ACR
+      run: |
+        # Build image tagged with the short git commit SHA
+        TAG="${{ github.sha }}"
+        FULL_IMAGE_PATH="${{ env.ACR_SERVER }}/${{ env.IMAGE_NAME }}:$TAG"
+        
+        echo "Building image: $FULL_IMAGE_PATH"
+        docker build -t "$FULL_IMAGE_PATH" .
+        
+        echo "Logging into ACR via Service Principal..."
+        az acr login --name ${{ env.ACR_NAME }}
+        
+        echo "Pushing image to private registry..."
+        docker push "$FULL_IMAGE_PATH"
+
+    - name: Determine Deployment Strategy (Create vs Update)
+      id: check_app
+      run: |
+        # Check if the container app already exists in the resource group
+        APP_EXISTS=$(az containerapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[?name=='${{ env.CONTAINER_APP_NAME }}'].id" --output tsv)
+        
+        if [ -z "$APP_EXISTS" ]; then
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Container App does not exist. Initiating Phase Bootstrapping Sequence..."
+        else
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Container App already exists. Skipping infrastructure setup..."
+        fi
+
+    # =========================================================================
+    # PATH A: INITIAL BOOTSTRAPPING (Runs only if the app does not exist)
+    # =========================================================================
+    - name: Phase 1 & 2 - Create Skeleton App and Fetch Identity Principal
+      if: steps.check_app.outputs.exists == 'false'
+      run: |
+        echo "Creating application container shell with System Identity..."
+        az containerapp create \
+          --name "${{ env.CONTAINER_APP_NAME }}" \
+          --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+          --environment "${{ env.CONTAINER_APP_ENV }}" \
+          --image "://microsoft.com" \
+          --system-assigned \
+          --target-port 80 \
+          --ingress external
+
+        echo "Extracting background Principal ID token..."
+        PRINCIPAL_ID=$(az containerapp show \
+          --name "${{ env.CONTAINER_APP_NAME }}" \
+          --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+          --query "identity.principalId" \
+          --output tsv)
+          
+        echo "PRINCIPAL_ID=$PRINCIPAL_ID" >> $GITHUB_ENV
+
+    - name: Phase 3 - Map AcrPull Role Assignment
+      if: steps.check_app.outputs.exists == 'false'
+      run: |
+        # Fetches your ACR resource ID dynamically
+        ACR_SCOPE=$(az acr show --name ${{ env.ACR_NAME }} --query id --output tsv)
+        
+        echo "Assigning AcrPull rights to System Identity: ${{ env.PRINCIPAL_ID }}"
+        az role assignment create \
+          --assignee "${{ env.PRINCIPAL_ID }}" \
+          --role "AcrPull" \
+          --scope "$ACR_SCOPE"
+          
+        # Small sleep block to guarantee Azure global Entra ID replication completes
+        sleep 15
+
+    - name: Phase 4 - Bind Registry Link and Deploy Private Production Image
+      if: steps.check_app.outputs.exists == 'false'
+      run: |
+        echo "Binding registry authentication parameters to system profile..."
+        az containerapp registry set \
+          --name "${{ env.CONTAINER_APP_NAME }}" \
+          --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+          --server "${{ env.ACR_SERVER }}" \
+          --identity "system"
+
+        echo "Updating deployment instance to target your private custom image..."
+        az containerapp update \
+          --name "${{ env.CONTAINER_APP_NAME }}" \
+          --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+          --image "${{ env.ACR_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+
+    # =========================================================================
+    # PATH B: STANDARD UPDATE (Runs on all subsequent pipeline executions)
+    # =========================================================================
+    - name: Standard Production Image Revision Update
+      if: steps.check_app.outputs.exists == 'true'
+      run: |
+        echo "Deploying new app revision using your built private image container..."
+        az containerapp update \
+          --name "${{ env.CONTAINER_APP_NAME }}" \
+          --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+          --image "${{ env.ACR_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
