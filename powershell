@@ -1,3 +1,29 @@
 az acr show \
   --name xxyeusdev \
   --query "{PublicAccess:publicNetworkAccess,Firewall:networkRuleSet.defaultAction,PrivateEndpoints:length(privateEndpointConnections)}"
+-------------------
+
+az network private-endpoint-connection list --id $(az acr show --name xxyeusdev --query id -o tsv)
+(or)
+$acrid = az acr show --name xxyeusdev --query id -o tsv
+az network private-endpoint-connection list --id $acrid
+
+az network private-endpoint show \
+  --name <private-endpoint-name> \
+  --resource-group <private-endpoint-rg>
+
+>> az network private-endpoint show --name <private-endpoint-name> --resource-group <private-endpoint-rg> --query "subnet.id"
+
+az network private-dns zone list -o table
+
+az network private-dns link vnet list \
+  --resource-group <dns-rg> \
+  --zone-name privatelink.azurecr.io \
+  -o table
+
+az containerapp env show --name azr-eus-dev-einv-aca01 --resource-group <rg> --query properties.vnetConfiguration.infrastructureSubnetId -o tsv
+
+-------------
+
+az network private-dns zone list --query "[?contains(name,'azurecr')].[name,resourceGroup]" -o table
+
