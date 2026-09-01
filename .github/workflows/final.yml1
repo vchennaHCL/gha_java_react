@@ -1,0 +1,162 @@
+build-react:
+
+  runs-on: build-runner
+
+  outputs:
+    image_tag: ${{ steps.tag.outputs.image_tag }}
+
+  steps:
+
+    - uses: actions/checkout@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Compile
+      run: npm run build
+
+    - name: Generate Image Tag
+      id: tag
+      run: |
+        echo "image_tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+    - name: Kaniko Build & Push
+      run: |
+        /kaniko/executor \
+          --context . \
+          --dockerfile Dockerfile \
+          --destination=${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ steps.tag.outputs.image_tag }}
+
+wiz-scan-react:
+
+  needs: build-react
+
+  runs-on: wiz-scan-runner
+
+  permissions:
+    security-events: write
+    contents: read
+
+  steps:
+
+    - uses: actions/checkout@v4
+
+    - name: Run Wiz Scan
+      env:
+        WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+        WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        WIZ_CNTR_POLICY: ${{ secrets.WIZ_CNTR_POLICY }}
+      run: |
+
+        IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ needs.build-react.outputs.image_tag }}"
+
+        bash .github/scripts/run_wiz-scan.sh \
+          "$IMAGE" \
+          "$GITHUB_WORKSPACE/Dockerfile" \
+          "$GITHUB_WORKSPACE"
+
+    - name: Upload SARIF
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: results.sarif
+
+deploy-react:
+
+  needs:
+    - build-react
+    - wiz-scan-react
+
+  runs-on: deployment-runner
+
+  steps:
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: |
+          {
+            "clientId":"${{ secrets.DEPLOY_SP_CLIENT_ID }}",
+            "clientSecret":"${{ secrets.DEPLOY_SP_CLIENT_SECRET }}",
+            "subscriptionId":"${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}",
+            "tenantId":"${{ secrets.DEPLOY_SP_TENANT_ID }}"
+          }
+
+    - name: Set Subscription
+      run: |
+        az account set \
+          --subscription "${{ secrets.DEPLOY_SP_SUBSCRIPTION_ID }}"
+
+    - name: Create Or Update ACA
+      run: |
+
+        ACA_NAME="${{ secrets.ACA_NAME }}"
+        RG_NAME="${{ secrets.ACA_RESOURCE_GROUP }}"
+        ACA_ENV="${{ secrets.ACA_ENVIRONMENT }}"
+
+        IMAGE="${{ secrets.ACR_LOGIN_SERVER }}/react-webapp:${{ needs.build-react.outputs.image_tag }}"
+
+        if az containerapp show \
+          --name "$ACA_NAME" \
+          --resource-group "$RG_NAME" > /dev/null 2>&1
+        then
+
+          az containerapp update \
+            --name "$ACA_NAME" \
+            --resource-group "$RG_NAME" \
+            --image "$IMAGE"
+
+        else
+
+          az containerapp create \
+            --name "$ACA_NAME" \
+            --resource-group "$RG_NAME" \
+            --environment "$ACA_ENV" \
+            --image "$IMAGE" \
+            --registry-server "${{ secrets.ACR_LOGIN_SERVER }}" \
+            --registry-username "${{ secrets.ACR_USERNAME }}" \
+            --registry-password "${{ secrets.ACR_PASSWORD }}" \
+            --target-port 80 \
+            --ingress external \
+            --min-replicas 1 \
+            --max-replicas 2
+
+        fi
+
+    - name: Verify Deployment
+      run: |
+        az containerapp show \
+          --name "${{ secrets.ACA_NAME }}" \
+          --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+          --query properties.provisioningState \
+          -o tsv
+
+    - name: Show Revisions
+      run: |
+        az containerapp revision list \
+          --name "${{ secrets.ACA_NAME }}" \
+          --resource-group "${{ secrets.ACA_RESOURCE_GROUP }}" \
+          -o table
+
+
+ACR_LOGIN_SERVER
+ACR_USERNAME
+ACR_PASSWORD
+
+DEPLOY_SP_CLIENT_ID
+DEPLOY_SP_CLIENT_SECRET
+DEPLOY_SP_TENANT_ID
+DEPLOY_SP_SUBSCRIPTION_ID
+
+ACA_NAME
+ACA_RESOURCE_GROUP
+ACA_ENVIRONMENT
+
+WIZ_CLIENT_ID
+WIZ_CLIENT_SECRET
+WIZ_CNTR_POLICY
+
