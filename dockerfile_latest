@@ -1,0 +1,21 @@
+# Build Stage
+FROM xxyeusdev.azurecr.io/java-base:latest AS build
+
+WORKDIR /app
+
+COPY eModule/ .
+
+RUN chmod +x gradlew
+
+RUN ./gradlew clean build -x test
+
+# Runtime Stage
+FROM xxyeusdev.azurecr.io/java-runtime:latest
+
+WORKDIR /app
+
+COPY --from=build /app/build/libs/*.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java","-jar","app.jar"]
